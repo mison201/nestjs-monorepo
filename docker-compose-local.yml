@@ -1,62 +1,67 @@
 version: '3'
 
 services:
-  db:
-    container_name: monorepo-mongo
-    image: mongo
-    env_file:
-      - .env
-    ports:
-      - 27017:27017
-  mongo-express:
-    container_name: monorepo-mongo-express
-    image: mongo-express
-    restart: always
-    depends_on:
-      - db
-    ports:
-      - 8082:8082
-    env_file:
-      - .env
   redis:
-    container_name: monorepo-redis
-    image: 'redis:alpine'
+    image: redis:alpine
     ports:
-      - 6379:6379
-  redis-commander:
-    container_name: monorepo-redis-commander
-    image: rediscommander/redis-commander:latest
-    restart: always
-    depends_on:
-      - redis
-    env_file:
-      - .env
-    ports:
-      - '8081:8081'
-  elasticsearch:
-    container_name: monorepo_elasticsearch
-    image: elasticsearch:7.11.2
-    ports:
-      - '9200:9200'
-      - '9300:9300'
+      - '6380:6379'
+    volumes:
+      - .data/redis:/data
     environment:
-      - node.name=elasticsearch
-      - cluster.name=es-docker-cluster
+      REDIS_PASSWORD: redis
+
+  postgres:
+    image: postgres:12-alpine
+    ports:
+      - '5432:5432'
+    hostname: postgres-db
+    volumes:
+      - .data/postgres:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      APP_DB_USER: metabase
+      APP_DB_PASS: metabase
+      APP_DB_NAME: pikasso
+      APP_DB_EXCHANGE_NAME: exchange
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.4.0
+    container_name: monorepo_elasticsearch
+    restart: always
+    environment:
+      - xpack.security.enabled=false
       - discovery.type=single-node
-      - bootstrap.memory_lock=true
-      - "ES_JAVA_OPTS=-Xms1024m -Xmx1024m"
+      - http.cors.enabled=true
+      - http.cors.allow-origin="https://app.elasticvue.com"
     ulimits:
       memlock:
         soft: -1
         hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - .data/elasticsearch:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+
   kibana:
     container_name: monorepo-kibana
-    image: kibana:7.11.2
-    ports:
-      - '5601:5601'
+    image: docker.elastic.co/kibana/kibana:7.4.0
+    restart: always
     environment:
-      ELASTICSEARCH_URL: http://elasticsearch:9200
-      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200 # address of elasticsearch docker container which kibana will connect
+    ports:
+      - 5601:5601
+    depends_on:
+      - elasticsearch # kibana will start when elasticsearch has started
   jaegertracing:
     container_name: monorepo_jaegertracing
     image: jaegertracing/all-in-one:latest
